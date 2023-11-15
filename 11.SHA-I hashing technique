@@ -1,0 +1,137 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+#define SHA1_BLOCK_SIZE 64
+#define SHA1_DIGEST_SIZE 20
+
+// SHA-1 functions
+uint32_t leftRotate(uint32_t value, int shift);
+void sha1(uint8_t *message, size_t message_len, uint32_t hash[5]);
+void sha1_pad(uint8_t *message, size_t message_len, uint8_t **padded_message, size_t *padded_len);
+
+int main() {
+    char input[1000];
+    printf("Enter the message to hash: ");
+    fgets(input, sizeof(input), stdin);
+
+    // Remove newline character from the input
+    size_t input_len = strlen(input);
+    if (input_len > 0 && input[input_len - 1] == '\n') {
+        input[input_len - 1] = '\0';
+        input_len--;
+    }
+
+    // Calculate SHA-1 hash
+    uint32_t hash[5];
+    sha1((uint8_t *)input, input_len, hash);
+
+    // Print the hash
+    printf("SHA-1 Hash: ");
+    for (int i = 0; i < 5; i++) {
+        printf("%08x", hash[i]);
+    }
+    printf("\n");
+
+    return 0;
+}
+
+uint32_t leftRotate(uint32_t value, int shift) {
+    return (value << shift) | (value >> (32 - shift));
+}
+
+void sha1(uint8_t *message, size_t message_len, uint32_t hash[5]) {
+    // Initialize hash values
+    hash[0] = 0x67452301;
+    hash[1] = 0xEFCDAB89;
+    hash[2] = 0x98BADCFE;
+    hash[3] = 0x10325476;
+    hash[4] = 0xC3D2E1F0;
+
+    // Pad the message
+    uint8_t *padded_message;
+    size_t padded_len;
+    sha1_pad(message, message_len, &padded_message, &padded_len);
+
+    // Process each 512-bit block
+    for (size_t i = 0; i < padded_len; i += SHA1_BLOCK_SIZE) {
+        uint32_t words[80];
+
+        // Prepare the message schedule
+        for (int j = 0; j < 16; j++) {
+            words[j] = (padded_message[i + j * 4] << 24) |
+                       (padded_message[i + j * 4 + 1] << 16) |
+                       (padded_message[i + j * 4 + 2] << 8) |
+                       (padded_message[i + j * 4 + 3]);
+        }
+        for (int j = 16; j < 80; j++) {
+            words[j] = leftRotate((words[j - 3] ^ words[j - 8] ^ words[j - 14] ^ words[j - 16]), 1);
+        }
+
+        // Initialize hash values for this chunk
+        uint32_t a = hash[0];
+        uint32_t b = hash[1];
+        uint32_t c = hash[2];
+        uint32_t d = hash[3];
+        uint32_t e = hash[4];
+
+        // Main loop
+        for (int j = 0; j < 80; j++) {
+            uint32_t f, k;
+            if (j < 20) {
+                f = (b & c) | ((~b) & d);
+                k = 0x5A827999;
+            } else if (j < 40) {
+                f = b ^ c ^ d;
+                k = 0x6ED9EBA1;
+            } else if (j < 60) {
+                f = (b & c) | (b & d) | (c & d);
+                k = 0x8F1BBCDC;
+            } else {
+                f = b ^ c ^ d;
+                k = 0xCA62C1D6;
+            }
+
+            uint32_t temp = leftRotate(a, 5) + f + e + k + words[j];
+            e = d;
+            d = c;
+            c = leftRotate(b, 30);
+            b = a;
+            a = temp;
+        }
+
+        // Update hash values
+        hash[0] += a;
+        hash[1] += b;
+        hash[2] += c;
+        hash[3] += d;
+        hash[4] += e;
+    }
+
+    // Free the padded message
+    free(padded_message);
+}
+
+void sha1_pad(uint8_t *message, size_t message_len, uint8_t **padded_message, size_t *padded_len) {
+    // Calculate the number of blocks needed
+    size_t num_blocks = (message_len + 8) / SHA1_BLOCK_SIZE + 1;
+
+    // Calculate the total padded length
+    *padded_len = num_blocks * SHA1_BLOCK_SIZE;
+
+    // Allocate memory for the padded message
+    *padded_message = (uint8_t *)malloc(*padded_len);
+
+    // Copy the original message to the padded message
+    memcpy(*padded_message, message, message_len);
+
+    // Append the bit '1' to the message
+    (*padded_message)[message_len] = 0x80;
+
+    // Append the length of the original message in bits
+    uint64_t bit_length = (uint64_t)message_len * 8;
+    for (int i = 0; i < 8; i++) {
+        (*padded_message)[*padded_len - 8 + i] = (uint8_t)(bit_length >> (56 - i * 8));
+    }
+}
